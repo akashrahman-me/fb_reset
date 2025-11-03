@@ -115,6 +115,8 @@ numbers = """
 
 numbers = [num.strip() for num in numbers.split('\n') if num.strip()]
 
+numbers = numbers[:3]
+
 # Configuration for concurrent processing
 MAX_WORKERS = 3  # Number of concurrent browser sessions
 
@@ -153,10 +155,10 @@ def process_number(number):
         with driver_init_lock:
             driver = uc.Chrome(options=options)
             time.sleep(0.5)  # Small delay to ensure driver is fully initialized
+            driver.set_window_size(1200, 800)
 
         wait = WebDriverWait(driver, 9999)
         driver.get(FORGOT_URL)
-        flows.restore_all()
 
         while True:
             flow = flow_handler(driver, flows)
@@ -165,20 +167,16 @@ def process_number(number):
 
             if flow == "FIND_ACCOUNT":
                 flows.remove_by_id("FIND_ACCOUNT")
-                flows.restore_by_id("NO_SEARCH_RESULTS")
-
-                input_field = wait.until(
-                    EC.visibility_of_element_located((By.ID, "identify_email"))
-                )
-                input_field.clear()
-                input_field.send_keys(number, Keys.ENTER)
-                time.sleep(4)
+                input = wait.until(EC.element_to_be_clickable((By.ID, "identify_email")))
+                input.clear()
+                while input.get_attribute("value") == "":
+                    input.send_keys(number, Keys.ENTER)
+                    time.sleep(1)
 
                 continue
 
             if flow == "NO_SEARCH_RESULTS":
                 flows.remove_by_id("NO_SEARCH_RESULTS")
-                flows.restore_by_id("FIND_ACCOUNT")
                 print(f"[{number}] No search result for the number {number}")
                 result["status"] = "not_found"
                 result["message"] = "No search results"
@@ -188,6 +186,7 @@ def process_number(number):
                 flows.remove_by_id("DIRECT_SEND_CODE")
                 continue_btn = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, 'button[type="submit"]')))
                 continue_btn.click()
+                continue
 
             if flow == "TRY_ANOTHER_WAY":
                 flows.remove_by_id("TRY_ANOTHER_WAY")
@@ -207,7 +206,6 @@ def process_number(number):
                     next_el = inp.find_element(By.XPATH, "following-sibling::*[1]")
                     num = next_el.find_element(By.CSS_SELECTOR, 'div._9o1y div[dir="ltr"], div._9o1y div[dir="rtl"]')
                     num = num.text.strip()
-                    # if re.fullmatch(r"\+\d{6,}", num):
                     if number in num:
                         is_available_num = True
                         next_el.click()
