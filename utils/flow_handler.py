@@ -11,7 +11,7 @@ def flow_handler(driver, selectors, timeout=9999, interval=0.25):
         try:
             for selector in selectors:
                 try:
-                    elem = driver.find_element(By.CSS_SELECTOR, selector[0])
+                    elem = driver.find_element(By.XPATH, selector[0])
                     if elem.is_displayed():
                         return selector[1]
                 except (NoSuchElementException, StaleElementReferenceException):
