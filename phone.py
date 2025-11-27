@@ -1,5 +1,6 @@
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -102,6 +103,9 @@ numbers = [num.strip() for num in numbers.split('\n') if num.strip()]
 MAX_WORKERS = 7
 FORGOT_URL = 'https://m.facebook.com/login/identify/'
 
+# Lock for driver initialization to prevent race conditions
+driver_init_lock = Lock()
+
 
 def click_element(driver, element):
     """Simple click with JavaScript fallback"""
@@ -124,6 +128,7 @@ def agent(number):
         ("//span[normalize-space()='Choose a way to log in.']", "CHOOSE_LOGIN_WAY"),
         ("//span[normalize-space()='Choose your account']", "CHOOSE_ACCOUNT"),
         ("//span[normalize-space()='Confirm your account']", "ACCOUNT_CONFIRM"),
+        ("//span[normalize-space()='Before we send the code']", "RECHAPTCHA"),
     ])
 
     driver = None
@@ -138,14 +143,17 @@ def agent(number):
         custom_user_agent = "Mozilla/5.0 (Linux; Android 8.0.0; SM-G955U Build/R16NW) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36"
         options.add_argument(f"--user-agent={custom_user_agent}")
 
-        driver = uc.Chrome(options=options)
-        driver.set_window_size(375, 812)
+        with driver_init_lock:
+            driver = uc.Chrome(options=options)
+            driver.set_window_size(375, 812)
 
         wait = WebDriverWait(driver, 30)
         driver.get(FORGOT_URL)
 
         while True:
             flow = flow_handler(driver, flows)
+
+            print("flow: ", flow)
 
             if flow == "MOBILE_NUMBER": # done
                 flows.remove_by_id("MOBILE_NUMBER")
@@ -201,6 +209,13 @@ def agent(number):
                 click_element(driver, submit_btn)
 
                 continue
+
+
+            if flow == "RECHAPTCHA": # done
+                flows.remove_by_id("RECHAPTCHA")
+                result["status"] = "recaptcha"
+                result["message"] = "Trow RECHAPTCHA"
+                break
 
 
             if flow == "ACCOUNT_CONFIRM": # done
