@@ -6,101 +6,18 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.common.exceptions import TimeoutException
 from libs.FlowList import FlowList
 from utils.flow_handler import flow_handler
 
-numbers = """
-2250712579031
-2250712575559
-2250712571137
-2250712574881
-2250712572794
-2250712570511
-2250712570223
-2250712573276
-2250712574964
-2250712577700
-2250712577957
-2250712574615
-2250712576292
-2250712573186
-2250712575336
-2250712578370
-2250712574092
-2250712576788
-2250712571978
-2250712572163
-2250712578124
-2250712576696
-2250712573324
-2250712579233
-2250712572082
-2250712573086
-2250712577006
-2250712576432
-2250712575366
-2250712570050
-2250712576125
-2250712575087
-2250712574298
-2250712577593
-2250712574839
-2250712576953
-2250712570789
-2250712574794
-2250712572482
-2250712575850
-2250712573594
-2250712572277
-2250712577635
-2250712578046
-2250712574781
-2250712570102
-2250712570420
-2250712577382
-2250712572656
-2250712571782
-2250712570859
-2250712579761
-2250712576681
-2250712575179
-2250712574982
-2250712579507
-2250712579883
-2250712578629
-2250712577212
-2250712579394
-2250712576027
-2250712572169
-2250712574522
-2250712571584
-2250712576461
-2250712575910
-2250712573032
-2250712578593
-2250712570566
-2250712576743
-2250712577463
-2250712574925
-2250712579084
-2250712578408
-2250712571151
-2250712573059
-2250712570614
-2250712575011
-2250712575337
-2250712577474
-2250712578144
-2250712571767
-2250712575082
-"""
+with open("numbers.txt", "r") as f:
+    numbers = f.read()
 
 numbers = [num.strip() for num in numbers.split('\n') if num.strip()]
 
 
 # Configuration
-MAX_WORKERS = 7
+MAX_WORKERS = 20
 FORGOT_URL = 'https://m.facebook.com/login/identify/'
 
 # Lock for driver initialization to prevent race conditions
@@ -139,7 +56,7 @@ def agent(number):
         options = uc.ChromeOptions()
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-blink-features=AutomationControlled")
-        # options.add_argument("--headless=new")  # Uncomment for headless mode
+        options.add_argument("--headless=new")  # Uncomment for headless mode
         custom_user_agent = "Mozilla/5.0 (Linux; Android 8.0.0; SM-G955U Build/R16NW) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36"
         options.add_argument(f"--user-agent={custom_user_agent}")
 
@@ -153,19 +70,27 @@ def agent(number):
         while True:
             flow = flow_handler(driver, flows)
 
-            print("flow: ", flow)
+            print(f"[{number}]", "flow: ", flow)
 
             if flow == "MOBILE_NUMBER": # done
                 flows.remove_by_id("MOBILE_NUMBER")
 
                 # Fill in the phone number
-                input_elem = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[contains(@aria-label, 'Mobile number')]")))
-                input_elem.clear()
-                input_elem.send_keys(number)
-                time.sleep(0.5)
+                for i in range(999):
+                    input_elem = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[contains(@aria-label, 'Mobile number')]")))
+
+                    input_elem.click()
+                    input_elem.send_keys(number)
+
+                    value = input_elem.get_attribute("value")
+
+                    if value == number:
+                        print(f"[{number}] Success filled after {i + 1} times try")
+                        break
 
                 # Submit the form
-                input_elem.send_keys(Keys.ENTER)
+                continue_btn = driver.find_element(By.XPATH, "//span[normalize-space()='Continue']")
+                click_element(driver, continue_btn)
                 continue
 
             if flow == "COULD_NOT_FIND_ACCOUNT" or flow == "COULD_NOT_FIND_ACCOUNT2": # done
@@ -220,7 +145,6 @@ def agent(number):
 
             if flow == "ACCOUNT_CONFIRM": # done
                 flows.remove_by_id("ACCOUNT_CONFIRM")
-                print(f"[{number}] ✓ SUCCESS!")
                 result["status"] = "success"
                 result["message"] = "Security code page reached"
                 time.sleep(3)
@@ -237,11 +161,12 @@ def agent(number):
     finally:
         if driver:
             try:
+                time.sleep(3)
                 driver.quit()
             except:
                 pass
 
-    print(result["message"])
+    print(f'[{number}] {result["message"]}')
     return result
 
 
